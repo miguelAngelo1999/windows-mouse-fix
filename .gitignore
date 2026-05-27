@@ -1,0 +1,32 @@
+# Build outputs
+build/
+build_tests/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.idb
+
+# Driver build outputs (keep .dll, .inf, .cat only if signed)
+driver/x64/
+driver/Debug/
+driver/Release/
+
+# Installer staging
+installer/*.exe
+!installer/installer.nsi
+
+# VS files
+.vs/
+*.user
+*.suo
+*.vcxproj.filters
+
+# Test intermediates (keep WmfTests.exe, exclude obj)
+tests/*.obj
+tests/out/
+
+# OS
+Thumbs.db
+.DS_Store
