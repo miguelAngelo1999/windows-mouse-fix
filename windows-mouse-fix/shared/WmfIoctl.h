@@ -10,6 +10,7 @@
 #include <wdm.h>
 #else
 #include <windows.h>
+#include <winioctl.h>
 #endif
 
 #include <stdint.h>
