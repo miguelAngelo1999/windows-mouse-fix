@@ -3,34 +3,44 @@
 //
 // DriverClient.h
 // Communicates with the WmfVirtualPad UMDF2 driver via DeviceIoControl.
+// Falls back to TouchInjector (InjectTouchInput) when driver is not installed.
 //
 
 #include <windows.h>
 #include "../shared/WmfIoctl.h"
+#include "TouchInjector.h"
+
+enum class DriverMode {
+    NotConnected,   // neither driver nor touch injection available
+    TouchInject,    // using InjectTouchInput fallback (no rubber-band)
+    VirtualDriver   // using WmfVirtualPad driver (full PTP, rubber-band works)
+};
 
 class DriverClient {
 public:
     DriverClient();
     ~DriverClient();
 
-    // Open the driver device. Returns true on success.
-    // Returns false if the driver is not installed — app continues without it.
-    bool open();
+    // Try to open the driver first; fall back to TouchInjector.
+    // Returns the mode that was activated.
+    DriverMode open();
 
-    // Close the device handle.
     void close();
 
-    // Submit a PTP report to the driver.
-    // Returns false if the IOCTL fails (e.g. driver was unloaded).
-    // Automatically attempts to reopen on failure.
     bool submitReport(const WMF_PTP_REPORT& report);
 
-    bool isOpen() const { return m_hDevice != INVALID_HANDLE_VALUE; }
+    bool      isOpen()   const { return m_mode != DriverMode::NotConnected; }
+    DriverMode mode()    const { return m_mode; }
+
+    // Human-readable status for tray tooltip
+    const wchar_t* statusText() const;
 
 private:
-    HANDLE m_hDevice;
-    DWORD  m_lastError;
+    HANDLE       m_hDevice  = INVALID_HANDLE_VALUE;
+    DriverMode   m_mode     = DriverMode::NotConnected;
+    DWORD        m_lastError = 0;
+    TouchInjector m_touchInjector;
 
-    // Attempt to reopen after a failed submit
+    bool tryOpenDriver();
     bool tryReopen();
 };

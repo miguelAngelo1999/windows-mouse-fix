@@ -37,9 +37,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     // Apply auto-start setting
     settings.setAutoStart(settings.autoStart);
 
-    // ---- 3. Open driver client ----
+    // ---- 3. Open driver client (driver or touch injection fallback) ----
     DriverClient driver;
-    bool driverOk = driver.open();
+    DriverMode driverMode = driver.open();
 
     // ---- 4. Start scroll pipeline ----
     ScrollPipeline pipeline(driver, settings);
@@ -109,11 +109,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int) {
     }
 
     // Show driver warning in tray tooltip if driver not installed
-    if (!driverOk) {
-        tray.setTooltip(L"Windows Mouse Fix — Driver not installed! See README.");
-    } else {
-        tray.setEnabled(settings.enabled);
-    }
+    tray.setEnabled(settings.enabled);
+    tray.setTooltip(driver.statusText());
 
     // ---- 6. Run message loop (blocks until Exit is chosen) ----
     tray.runMessageLoop();
