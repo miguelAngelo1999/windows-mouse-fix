@@ -13,12 +13,13 @@ MouseHook::~MouseHook() {
     uninstall();
 }
 
-bool MouseHook::install(ScrollCallback cb) {
-    if (m_hook) return true; // already installed
+bool MouseHook::install(ScrollCallback cb, bool suppressEvents) {
+    if (m_hook) return true;
 
     m_callback  = cb;
     s_instance  = this;
     m_shutdown.store(false);
+    m_suppressEvents.store(suppressEvents);
 
     // The hook MUST be installed on a thread that runs GetMessage().
     // We create a dedicated thread for this.
@@ -100,6 +101,12 @@ LRESULT CALLBACK MouseHook::lowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
     if (wParam == WM_MOUSEWHEEL || wParam == WM_MOUSEHWHEEL) {
         MSLLHOOKSTRUCT* ms = reinterpret_cast<MSLLHOOKSTRUCT*>(lParam);
 
+        // Ignore events we injected ourselves (marked with kWmfMarker)
+        static const ULONG_PTR kWmfMarker = 0x574D4601;
+        if (ms->dwExtraInfo == kWmfMarker) {
+            return CallNextHookEx(nullptr, nCode, wParam, lParam);
+        }
+
         // Extract delta from mouseData high word
         int delta = static_cast<int>(static_cast<short>(HIWORD(ms->mouseData)));
 
@@ -113,8 +120,13 @@ LRESULT CALLBACK MouseHook::lowLevelMouseProc(int nCode, WPARAM wParam, LPARAM l
             s_instance->m_callback(ev);
         }
 
-        // Return 1 to suppress the event (don't pass to applications)
-        return 1;
+        // Only suppress if the pipeline is active and will re-inject
+        // (suppression is handled by ScrollPipeline based on driver mode)
+        if (s_instance->m_suppressEvents) {
+            return 1;
+        }
+
+        return CallNextHookEx(nullptr, nCode, wParam, lParam);
     }
 
     return CallNextHookEx(nullptr, nCode, wParam, lParam);

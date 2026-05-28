@@ -24,13 +24,17 @@ public:
     ~MouseHook();
 
     // Install the hook. The callback is called on the hook thread (fast — just enqueues).
+    // suppressEvents: if true, original scroll events are swallowed (use when re-injecting)
     // Returns false if SetWindowsHookEx fails.
-    bool install(ScrollCallback cb);
+    bool install(ScrollCallback cb, bool suppressEvents = false);
 
     // Uninstall the hook and stop the hook thread.
     void uninstall();
 
     bool isInstalled() const { return m_hook != nullptr; }
+
+    // Change suppress mode at runtime
+    void setSuppressEvents(bool suppress) { m_suppressEvents = suppress; }
 
 private:
     // The hook must be installed on a thread that runs a message loop.
@@ -41,6 +45,7 @@ private:
     HHOOK               m_hook      = nullptr;
     std::thread         m_thread;
     std::atomic<bool>   m_shutdown  { false };
+    std::atomic<bool>   m_suppressEvents { false };
     DWORD               m_threadId  = 0;
 
     // Static pointer to the single instance (WH_MOUSE_LL callback is static)

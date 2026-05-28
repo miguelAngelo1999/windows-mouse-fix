@@ -38,10 +38,12 @@ bool ScrollPipeline::start() {
     // Start persistent lift timer thread
     m_liftThread = std::thread(&ScrollPipeline::liftThreadFunc, this);
 
-    // Install mouse hook
+    // Install mouse hook — suppress original events in both modes
+    // In driver mode: we inject PTP contacts instead
+    // In basic mode: we inject smooth SendInput wheel events instead (marked to avoid re-interception)
     bool ok = m_hook.install([this](const ScrollEvent& ev) {
         onScrollEvent(ev);
-    });
+    }, true /* always suppress — we re-inject smoothly */);
 
     if (!ok) {
         stop();
@@ -203,17 +205,42 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
 // ---------------------------------------------------------------------------
 
 void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
-    // Map pixel delta to PTP contacts
-    // dy is the scroll delta (positive = scroll down = contacts move up)
-    WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
-    m_driver.submitReport(report);
 
-    if (isLast) {
-        // Animation finished naturally — lift fingers to trigger OS momentum
-        WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
-        m_driver.submitReport(liftReport);
-        m_contactMapper.reset();
-        m_liftPending.store(false);
+    if (m_driver.mode() == DriverMode::VirtualDriver) {
+        // Full PTP mode: send contact reports to driver
+        WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
+        m_driver.submitReport(report);
+
+        if (isLast) {
+            WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
+            m_driver.submitReport(liftReport);
+            m_contactMapper.reset();
+            m_liftPending.store(false);
+        }
+    } else {
+        // Basic mode (no driver): re-inject as smooth mouse wheel via SendInput
+        // The original event was NOT suppressed — we just add smooth animation on top
+        // by injecting additional small deltas spread over time.
+        // We mark injected events with a special dwExtraInfo so the hook ignores them.
+        static const ULONG_PTR kWmfMarker = 0x574D4601; // "WMF\x01"
+
+        if (dy != 0) {
+            INPUT input = {};
+            input.type           = INPUT_MOUSE;
+            input.mi.dwFlags     = MOUSEEVENTF_WHEEL;
+            // dy > 0 = scroll down = negative WHEEL_DELTA
+            input.mi.mouseData   = (DWORD)(WORD)(short)(-dy * 3);
+            input.mi.dwExtraInfo = kWmfMarker;
+            SendInput(1, &input, sizeof(INPUT));
+        }
+        if (dx != 0) {
+            INPUT input = {};
+            input.type           = INPUT_MOUSE;
+            input.mi.dwFlags     = MOUSEEVENTF_HWHEEL;
+            input.mi.mouseData   = (DWORD)(WORD)(short)(-dx * 3);
+            input.mi.dwExtraInfo = kWmfMarker;
+            SendInput(1, &input, sizeof(INPUT));
+        }
     }
 }
 
