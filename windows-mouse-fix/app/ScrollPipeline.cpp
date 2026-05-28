@@ -163,6 +163,8 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
         m_subPixelator.reset();
         m_contactMapper.reset();
         cancelLift();
+        // Reset wheel accumulators (they're static in onAnimationFrame — reset via flag)
+        m_resetWheelAccum = true;
     }
 
     // Compute pixels for this tick
@@ -227,27 +229,49 @@ void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
         }
     } else {
         // Basic mode (no driver): re-inject as smooth mouse wheel via SendInput
-        // The original event was NOT suppressed — we just add smooth animation on top
-        // by injecting additional small deltas spread over time.
-        // We mark injected events with a special dwExtraInfo so the hook ignores them.
-        static const ULONG_PTR kWmfMarker = 0x574D4601; // "WMF\x01"
+        // The original event was suppressed — we re-inject it spread over time.
+        // WHEEL_DELTA = 120 per notch. We accumulate pixel deltas and convert.
+        // Scale: 120 WHEEL_DELTA units per ~100 pixels scrolled.
+        static const ULONG_PTR kWmfMarker = 0x574D4601;
+
+        // Accumulate pixel deltas into wheel units (120 = one notch)
+        // Use a static accumulator so small deltas add up
+        static double s_wheelAccumY = 0.0;
+        static double s_wheelAccumX = 0.0;
+
+        // Reset accumulators if direction changed
+        if (m_resetWheelAccum.exchange(false)) {
+            s_wheelAccumY = 0.0;
+            s_wheelAccumX = 0.0;
+        }
 
         if (dy != 0) {
-            INPUT input = {};
-            input.type           = INPUT_MOUSE;
-            input.mi.dwFlags     = MOUSEEVENTF_WHEEL;
-            // dy > 0 = scroll down = negative WHEEL_DELTA
-            input.mi.mouseData   = (DWORD)(WORD)(short)(-dy * 3);
-            input.mi.dwExtraInfo = kWmfMarker;
-            SendInput(1, &input, sizeof(INPUT));
+            // dy pixels -> wheel delta: 120 units per 40 pixels
+            s_wheelAccumY += dy * (120.0 / 40.0);
+            int wheelDelta = (int)s_wheelAccumY;
+            if (wheelDelta != 0) {
+                s_wheelAccumY -= wheelDelta;
+                INPUT input = {};
+                input.type           = INPUT_MOUSE;
+                input.mi.dwFlags     = MOUSEEVENTF_WHEEL;
+                // dy > 0 = scroll down = negative WHEEL_DELTA (away from user = positive)
+                input.mi.mouseData   = (DWORD)(WORD)(short)(-wheelDelta);
+                input.mi.dwExtraInfo = kWmfMarker;
+                SendInput(1, &input, sizeof(INPUT));
+            }
         }
         if (dx != 0) {
-            INPUT input = {};
-            input.type           = INPUT_MOUSE;
-            input.mi.dwFlags     = MOUSEEVENTF_HWHEEL;
-            input.mi.mouseData   = (DWORD)(WORD)(short)(-dx * 3);
-            input.mi.dwExtraInfo = kWmfMarker;
-            SendInput(1, &input, sizeof(INPUT));
+            s_wheelAccumX += dx * (120.0 / 40.0);
+            int wheelDelta = (int)s_wheelAccumX;
+            if (wheelDelta != 0) {
+                s_wheelAccumX -= wheelDelta;
+                INPUT input = {};
+                input.type           = INPUT_MOUSE;
+                input.mi.dwFlags     = MOUSEEVENTF_HWHEEL;
+                input.mi.mouseData   = (DWORD)(WORD)(short)(-wheelDelta);
+                input.mi.dwExtraInfo = kWmfMarker;
+                SendInput(1, &input, sizeof(INPUT));
+            }
         }
     }
 }
