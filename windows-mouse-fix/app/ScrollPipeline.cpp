@@ -228,36 +228,45 @@ void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
             m_liftPending.store(false);
         }
     } else {
-        // Basic mode (no driver): re-inject as smooth mouse wheel via SendInput
-        // The original event was suppressed — we re-inject it spread over time.
-        // WHEEL_DELTA = 120 per notch. We accumulate pixel deltas and convert.
-        // Scale: 120 WHEEL_DELTA units per ~100 pixels scrolled.
-        static const ULONG_PTR kWmfMarker = 0x574D4601;
+        // Basic mode (no driver): use a hybrid approach.
+        // 1. Inject touch input via InjectTouchInput (works for UWP apps + Start Menu)
+        // 2. Also PostMessage WM_MOUSEWHEEL (works for legacy Win32 apps)
+        // The receiving app uses whichever it understands.
 
-        // Accumulate pixel deltas into wheel units (120 = one notch)
-        // Use a static accumulator so small deltas add up
         static double s_wheelAccumY = 0.0;
         static double s_wheelAccumX = 0.0;
 
-        // Reset accumulators if direction changed
         if (m_resetWheelAccum.exchange(false)) {
             s_wheelAccumY = 0.0;
             s_wheelAccumX = 0.0;
         }
 
+        // === Method 1: Touch injection (UWP/Modern apps) ===
+        // Build a 2-finger "touch and drag" report
+        WMF_PTP_REPORT touchReport = m_contactMapper.map(dy, dx, false);
+        m_driver.submitReport(touchReport); // calls TouchInjector internally
+
+        // === Method 2: PostMessage (Legacy apps) ===
+        POINT pt;
+        GetCursorPos(&pt);
+        HWND hwndTarget = WindowFromPoint(pt);
+        if (!hwndTarget) hwndTarget = GetForegroundWindow();
+        HWND hwndFg = GetForegroundWindow();
+        if (hwndFg) {
+            POINT clientPt = pt;
+            ScreenToClient(hwndFg, &clientPt);
+            HWND hwndDeep = RealChildWindowFromPoint(hwndFg, clientPt);
+            if (hwndDeep && hwndDeep != hwndFg) hwndTarget = hwndDeep;
+        }
+
         if (dy != 0) {
-            // dy pixels -> wheel delta: 120 units per 40 pixels
             s_wheelAccumY += dy * (120.0 / 40.0);
             int wheelDelta = (int)s_wheelAccumY;
             if (wheelDelta != 0) {
                 s_wheelAccumY -= wheelDelta;
-                INPUT input = {};
-                input.type           = INPUT_MOUSE;
-                input.mi.dwFlags     = MOUSEEVENTF_WHEEL;
-                // dy > 0 = scroll down = negative WHEEL_DELTA (away from user = positive)
-                input.mi.mouseData   = (DWORD)(WORD)(short)(-wheelDelta);
-                input.mi.dwExtraInfo = kWmfMarker;
-                SendInput(1, &input, sizeof(INPUT));
+                WPARAM wp = MAKEWPARAM(0, (SHORT)(-wheelDelta));
+                LPARAM lp = MAKELPARAM((WORD)pt.x, (WORD)pt.y);
+                PostMessage(hwndTarget, WM_MOUSEWHEEL, wp, lp);
             }
         }
         if (dx != 0) {
@@ -265,13 +274,17 @@ void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
             int wheelDelta = (int)s_wheelAccumX;
             if (wheelDelta != 0) {
                 s_wheelAccumX -= wheelDelta;
-                INPUT input = {};
-                input.type           = INPUT_MOUSE;
-                input.mi.dwFlags     = MOUSEEVENTF_HWHEEL;
-                input.mi.mouseData   = (DWORD)(WORD)(short)(-wheelDelta);
-                input.mi.dwExtraInfo = kWmfMarker;
-                SendInput(1, &input, sizeof(INPUT));
+                WPARAM wp = MAKEWPARAM(0, (SHORT)(-wheelDelta));
+                LPARAM lp = MAKELPARAM((WORD)pt.x, (WORD)pt.y);
+                PostMessage(hwndTarget, WM_MOUSEHWHEEL, wp, lp);
             }
+        }
+
+        if (isLast) {
+            // Lift fingers to end touch gesture (triggers OS momentum/rubber-band)
+            WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
+            m_driver.submitReport(liftReport);
+            m_contactMapper.reset();
         }
     }
 }
