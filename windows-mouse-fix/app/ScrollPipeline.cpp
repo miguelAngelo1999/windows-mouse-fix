@@ -86,11 +86,19 @@ void ScrollPipeline::applySettings(const Settings& settings) {
 // ---------------------------------------------------------------------------
 
 void ScrollPipeline::onScrollEvent(const ScrollEvent& ev) {
+    // This runs on the hook thread — must be FAST, no blocking
+    // Just push to queue and signal
+    bool pushed = false;
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
-        m_eventQueue.push(ev);
+        if (m_eventQueue.size() < 64) { // cap queue size
+            m_eventQueue.push(ev);
+            pushed = true;
+        }
     }
-    m_queueCv.notify_one();
+    if (pushed) {
+        m_queueCv.notify_one();
+    }
 }
 
 // ---------------------------------------------------------------------------
