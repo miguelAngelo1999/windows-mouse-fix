@@ -1,46 +1,43 @@
 #pragma once
-
-//
-// HidReportDescriptor.h
-// Windows Precision Touchpad HID report descriptor.
-//
-// Conforms to the Microsoft Precision Touchpad specification:
-// https://learn.microsoft.com/en-us/windows-hardware/design/component-guidelines/touchpad-protocol-implementation
-//
-// Report layout:
-//   Report ID 0x01 (Input):
-//     For each of 5 contacts (5 bytes each):
-//       - Tip Switch    (1 bit)
-//       - Confidence    (1 bit)
-//       - Padding       (6 bits)
-//       - Contact ID    (8 bits)
-//       - X             (16 bits, 0-4095)
-//       - Y             (16 bits, 0-4095)
-//     Contact Count     (8 bits)
-//     Scan Time         (16 bits, 100us units)
-//   Total input report: 1 + 5*5 + 1 + 2 = 29 bytes
-//
-//   Report ID 0x02 (Feature):
-//     Contact Count Maximum (8 bits)
-//   Total feature report: 2 bytes
-//
-
-// One contact block in the descriptor (repeated 5 times with different contact IDs).
-// We define the full descriptor inline below.
+/*
+ * HidReportDescriptor.h
+ * Windows Precision Touchpad HID report descriptor.
+ *
+ * Conforms to the Microsoft Precision Touchpad specification:
+ * https://learn.microsoft.com/en-us/windows-hardware/design/component-guidelines/touchpad-protocol-implementation
+ *
+ * Reports:
+ *   0x01 - Input: 5 contacts + contact count + scan time
+ *   0x02 - Feature: Contact Count Maximum (5)
+ *   0x03 - Feature: Input Mode (mouse=0x00, touchpad=0x03)
+ *   0x04 - Feature: Selective Reporting (surface+button switches)
+ *   0x05 - Feature: PTPHQA certification blob (256 bytes)
+ *
+ * Input report layout (report ID 0x01):
+ *   Byte 0:    Report ID (0x01)
+ *   Per contact (6 bytes each, 5 contacts = 30 bytes):
+ *     Byte 0:  Confidence(1) | TipSwitch(1) | Padding(6)
+ *     Byte 1:  Contact ID
+ *     Byte 2-3: X (16-bit, 0-4095)
+ *     Byte 4-5: Y (16-bit, 0-4095)
+ *   Byte 31:   Contact Count
+ *   Byte 32-33: Scan Time (16-bit, 100us units)
+ *   Total: 1 + 30 + 1 + 2 = 34 bytes
+ */
 
 static const unsigned char kWmfHidReportDescriptor[] = {
+    // ======== Top-level collection: Touch Pad ========
     0x05, 0x0D,              // Usage Page (Digitizer)
     0x09, 0x05,              // Usage (Touch Pad)
     0xA1, 0x01,              // Collection (Application)
 
-    // ---- Input Report ID ----
+    // ---- Input Report (Report ID 0x01) ----
     0x85, 0x01,              //   Report ID (1)
 
     // ======== Contact 0 ========
     0x05, 0x0D,              //   Usage Page (Digitizer)
     0x09, 0x22,              //   Usage (Finger)
     0xA1, 0x02,              //   Collection (Logical)
-    // Tip Switch + Confidence (2 x 1-bit)
     0x09, 0x47,              //     Usage (Confidence)
     0x09, 0x42,              //     Usage (Tip Switch)
     0x15, 0x00,              //     Logical Minimum (0)
@@ -48,26 +45,22 @@ static const unsigned char kWmfHidReportDescriptor[] = {
     0x75, 0x01,              //     Report Size (1)
     0x95, 0x02,              //     Report Count (2)
     0x81, 0x02,              //     Input (Data, Variable, Absolute)
-    // Padding (6 bits)
     0x95, 0x06,              //     Report Count (6)
     0x81, 0x03,              //     Input (Constant)
-    // Contact ID (8 bits)
     0x09, 0x51,              //     Usage (Contact Identifier)
     0x75, 0x08,              //     Report Size (8)
     0x95, 0x01,              //     Report Count (1)
     0x25, 0x0A,              //     Logical Maximum (10)
     0x81, 0x02,              //     Input (Data, Variable, Absolute)
-    // X (16 bits, 0-4095, physical 0-100mm)
     0x05, 0x01,              //     Usage Page (Generic Desktop)
     0x09, 0x30,              //     Usage (X)
     0x75, 0x10,              //     Report Size (16)
     0x55, 0x0E,              //     Unit Exponent (-2)
     0x65, 0x13,              //     Unit (Inch, English Linear)
     0x35, 0x00,              //     Physical Minimum (0)
-    0x46, 0x90, 0x01,        //     Physical Maximum (400) -> ~4 inches
+    0x46, 0x90, 0x01,        //     Physical Maximum (400)
     0x26, 0xFF, 0x0F,        //     Logical Maximum (4095)
     0x81, 0x02,              //     Input (Data, Variable, Absolute)
-    // Y (16 bits, 0-4095, physical 0-275 -> ~2.75 inches)
     0x09, 0x31,              //     Usage (Y)
     0x46, 0x13, 0x01,        //     Physical Maximum (275)
     0x26, 0xFF, 0x0F,        //     Logical Maximum (4095)
@@ -224,7 +217,7 @@ static const unsigned char kWmfHidReportDescriptor[] = {
     0x09, 0x56,              //   Usage (Scan Time)
     0x81, 0x02,              //   Input (Data, Variable, Absolute)
 
-    // ======== Feature Report: Contact Count Maximum ========
+    // ======== Feature Report: Contact Count Maximum (Report ID 0x02) ========
     0x85, 0x02,              //   Report ID (2)
     0x09, 0x55,              //   Usage (Contact Count Maximum)
     0x25, 0x05,              //   Logical Maximum (5)
@@ -232,13 +225,41 @@ static const unsigned char kWmfHidReportDescriptor[] = {
     0x95, 0x01,              //   Report Count (1)
     0xB1, 0x02,              //   Feature (Data, Variable, Absolute)
 
-    // ======== Feature Report: Pad Type ========
-    0x06, 0x00, 0xFF,        //   Usage Page (Vendor Defined)
+    // ======== Feature Report: Input Mode (Report ID 0x03) ========
+    // Windows writes 0x03 (Touchpad) to this to switch from mouse to PTP mode
     0x85, 0x03,              //   Report ID (3)
-    0x09, 0x01,              //   Usage (Vendor Usage 1) - Pad Type
-    0x25, 0x08,              //   Logical Maximum (8)
+    0x09, 0x52,              //   Usage (Input Mode)
+    0x15, 0x00,              //   Logical Minimum (0)
+    0x25, 0x0A,              //   Logical Maximum (10)
     0x75, 0x08,              //   Report Size (8)
     0x95, 0x01,              //   Report Count (1)
+    0xB1, 0x02,              //   Feature (Data, Variable, Absolute)
+
+    // ======== Feature Report: Selective Reporting (Report ID 0x04) ========
+    0x85, 0x04,              //   Report ID (4)
+    0x05, 0x0D,              //   Usage Page (Digitizer)
+    0x09, 0x22,              //   Usage (Finger)
+    0xA1, 0x02,              //   Collection (Logical)
+    0x09, 0x57,              //     Usage (Surface Switch)
+    0x09, 0x58,              //     Usage (Button Switch)
+    0x15, 0x00,              //     Logical Minimum (0)
+    0x25, 0x01,              //     Logical Maximum (1)
+    0x75, 0x01,              //     Report Size (1)
+    0x95, 0x02,              //     Report Count (2)
+    0xB1, 0x02,              //     Feature (Data, Variable, Absolute)
+    0x95, 0x06,              //     Report Count (6)
+    0xB1, 0x03,              //     Feature (Constant)
+    0xC0,                    //   End Collection
+
+    // ======== Feature Report: PTPHQA Certification Blob (Report ID 0x05) ========
+    // 256 bytes of zeros — Windows checks for presence, not content
+    0x06, 0x00, 0xFF,        //   Usage Page (Vendor Defined)
+    0x85, 0x05,              //   Report ID (5)
+    0x09, 0xC5,              //   Usage (Vendor Usage 0xC5) - PTPHQA
+    0x15, 0x00,              //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,        //   Logical Maximum (255)
+    0x75, 0x08,              //   Report Size (8)
+    0x96, 0x00, 0x01,        //   Report Count (256)
     0xB1, 0x02,              //   Feature (Data, Variable, Absolute)
 
     0xC0,                    // End Collection (Touch Pad)
@@ -246,7 +267,13 @@ static const unsigned char kWmfHidReportDescriptor[] = {
 
 #define WMF_HID_REPORT_DESCRIPTOR_SIZE  sizeof(kWmfHidReportDescriptor)
 
-// Input report size: 1 (report_id) + 5*5 (contacts) + 1 (count) + 2 (scan_time) = 29
-#define WMF_HID_INPUT_REPORT_SIZE   29
-// Feature report size: 1 (report_id) + 1 (max_contacts) = 2
-#define WMF_HID_FEATURE_REPORT_SIZE  2
+// Input report size (without report ID byte for HID read):
+// 5 contacts * 6 bytes + 1 (count) + 2 (scan_time) = 33 bytes
+// With report ID: 34 bytes
+#define WMF_HID_INPUT_REPORT_SIZE   33
+
+// Feature report sizes (without report ID):
+#define WMF_FEATURE_CONTACT_COUNT_MAX_SIZE  1   // Report ID 0x02: 1 byte
+#define WMF_FEATURE_INPUT_MODE_SIZE         1   // Report ID 0x03: 1 byte
+#define WMF_FEATURE_SELECTIVE_SIZE          1   // Report ID 0x04: 1 byte
+#define WMF_FEATURE_PTPHQA_SIZE           256   // Report ID 0x05: 256 bytes

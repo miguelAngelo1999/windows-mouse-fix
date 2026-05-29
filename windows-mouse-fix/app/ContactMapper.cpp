@@ -22,9 +22,7 @@ void ContactMapper::reset() {
 
 WMF_CONTACT ContactMapper::makeContact(uint8_t id, uint16_t x, uint16_t y, bool down) const {
     WMF_CONTACT c = {};
-    c.tip_switch = down ? 1 : 0;
-    c.confidence = down ? 1 : 0;
-    c.padding    = 0;
+    c.flags      = down ? WMF_CONTACT_FLAGS_DOWN : WMF_CONTACT_FLAGS_UP;
     c.contact_id = id;
     c.x          = x;
     c.y          = y;

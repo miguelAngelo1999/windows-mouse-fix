@@ -1,3 +1,4 @@
+;
 ; WmfVirtualPad.inf
 ; Installation file for the Windows Mouse Fix Virtual Precision Touchpad driver.
 ;
@@ -5,7 +6,6 @@
 ;   1. bcdedit /set testsigning on  (reboot required)
 ;   2. pnputil /add-driver WmfVirtualPad.inf /install
 ;
-; For release: submit to Microsoft Hardware Dev Center for attestation signing.
 
 [Version]
 Signature   = "$WINDOWS NT$"
@@ -13,7 +13,7 @@ Class       = HIDClass
 ClassGuid   = {745a17a0-74d3-11d0-b6fe-00a0c90f57da}
 Provider    = %ManufacturerName%
 CatalogFile = WmfVirtualPad.cat
-DriverVer   =
+DriverVer   = 05/29/2026,1.0.0.0
 PnpLockdown = 1
 
 [DestinationDirs]
@@ -28,9 +28,9 @@ WmfVirtualPad.dll = 1,,
 ; ---- Manufacturer / Models ----
 
 [Manufacturer]
-%ManufacturerName% = Standard, NT$ARCH$
+%ManufacturerName% = Standard, NTarm64
 
-[Standard.NT$ARCH$]
+[Standard.NTarm64]
 %DeviceDesc% = WmfVirtualPad_Install, ROOT\WmfVirtualPad
 
 ; ---- Install ----
@@ -41,8 +41,20 @@ CopyFiles = WmfVirtualPad_CopyFiles
 [WmfVirtualPad_CopyFiles]
 WmfVirtualPad.dll
 
+; ---- HW section (required for HID miniport) ----
+
+[WmfVirtualPad_Install.NT.HW]
+AddReg = WmfVirtualPad_HW_AddReg
+
+[WmfVirtualPad_HW_AddReg]
+; Allow user-mode access to the device (for our app's IOCTL)
+HKR,,Security,,"D:P(A;;GA;;;WD)"
+
+; ---- Services ----
+
 [WmfVirtualPad_Install.NT.Services]
 AddService = WUDFRd, 0x000001fa, WUDFRD_ServiceInstall
+AddService = mshidumdf, 0x00000002, mshidumdf_ServiceInstall
 
 [WUDFRD_ServiceInstall]
 DisplayName   = %WudfRdDisplayName%
@@ -51,34 +63,32 @@ StartType     = 3
 ErrorControl  = 1
 ServiceBinary = %12%\WUDFRd.sys
 
+[mshidumdf_ServiceInstall]
+DisplayName   = %mshidumdfDisplayName%
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %12%\mshidumdf.sys
+
+; ---- WDF settings ----
+
 [WmfVirtualPad_Install.NT.Wdf]
-UmdfService              = WmfVirtualPad, WmfVirtualPad_Install
+UmdfService              = WmfVirtualPad, WmfVirtualPad_UmdfService
 UmdfServiceOrder         = WmfVirtualPad
 UmdfKernelModeClientPolicy = AllowKernelModeClients
 UmdfFileObjectPolicy     = AllowNullAndUnknownFileObjects
+UmdfMethodNeitherAction  = Copy
 UmdfFsContextUsePolicy   = CannotUseFsContexts
 
-[WmfVirtualPad_Install]
-UmdfLibraryVersion = $UMDFVERSION$
+[WmfVirtualPad_UmdfService]
+UmdfLibraryVersion = 2.33.0
 ServiceBinary      = %13%\WmfVirtualPad.dll
-UmdfBusDriverName  = WUDFRd
-
-; ---- Device Interface ----
-
-[WmfVirtualPad_Install.NT.Interfaces]
-AddInterface = {4D1E55B2-F16F-11CF-88CB-001111000030},, WmfVirtualPad_Interface
-
-[WmfVirtualPad_Interface]
-AddProperty = WmfVirtualPad_Interface_AddProperty
-
-[WmfVirtualPad_Interface_AddProperty]
-; Mark as precision touchpad
-{3EFBE9B5-E14B-4B23-9B3E-5B7B4B4B4B4B}, 2, 17,, 1
 
 ; ---- Strings ----
 
 [Strings]
-ManufacturerName  = "Windows Mouse Fix"
-DiskName          = "Windows Mouse Fix Driver Disk"
-DeviceDesc        = "Windows Mouse Fix Virtual Precision Touchpad"
-WudfRdDisplayName = "Windows Driver Foundation - User-mode Driver Framework Reflector"
+ManufacturerName     = "Windows Mouse Fix"
+DiskName             = "Windows Mouse Fix Driver Disk"
+DeviceDesc           = "Windows Mouse Fix Virtual Precision Touchpad"
+WudfRdDisplayName    = "Windows Driver Foundation - User-mode Driver Framework Reflector"
+mshidumdfDisplayName = "Microsoft HID UMDF Mapper"

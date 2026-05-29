@@ -1,42 +1,78 @@
 #pragma once
-
-//
-// WmfVirtualPad.h
-// UMDF2 virtual HID Precision Touchpad driver.
-//
+/*
+ * WmfVirtualPad.h
+ * UMDF2 virtual HID Precision Touchpad driver.
+ *
+ * Based on the VHidMini2 UMDF2 sample from the Windows Driver Kit.
+ */
 
 #include <windows.h>
 #include <wdf.h>
-#include <wdmsec.h>
 #include <hidport.h>
+#include <initguid.h>
 
 #include "../shared/WmfIoctl.h"
 #include "HidReportDescriptor.h"
 
-// Device context — stored per WDF device object.
+// ---- Device context ----
 typedef struct _DEVICE_CONTEXT {
-    WDFDEVICE       Device;
-    WDFQUEUE        IoQueue;        // default I/O queue for IOCTL requests
-    WDFSPINLOCK     ReportLock;     // protects LastReport
-    WMF_PTP_REPORT  LastReport;     // most recent report submitted by user-mode
-    BOOLEAN         HasReport;      // TRUE once at least one report has arrived
+    WDFDEVICE           Device;
+    WDFQUEUE            DefaultQueue;
+    WDFQUEUE            ManualQueue;      // pending HID read requests
+    WDFSPINLOCK         ReportLock;
+    WMF_PTP_REPORT      LastReport;
+    BOOLEAN             HasReport;
+    UCHAR               InputMode;        // 0x00=mouse, 0x03=touchpad
+    HID_DESCRIPTOR      HidDescriptor;
+    HID_DEVICE_ATTRIBUTES HidDeviceAttributes;
 } DEVICE_CONTEXT, *PDEVICE_CONTEXT;
 
-WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, DeviceGetContext)
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(DEVICE_CONTEXT, GetDeviceContext)
 
-// Driver callbacks
+// ---- Queue context ----
+typedef struct _QUEUE_CONTEXT {
+    WDFQUEUE            Queue;
+    PDEVICE_CONTEXT     DeviceContext;
+} QUEUE_CONTEXT, *PQUEUE_CONTEXT;
+
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(QUEUE_CONTEXT, GetQueueContext)
+
+// ---- VID/PID ----
+#define WMF_VID     0x045E   // Microsoft
+#define WMF_PID     0x07A5   // Virtual Precision Touchpad
+#define WMF_VERSION 0x0100
+
+// ---- Driver callbacks ----
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD WmfEvtDeviceAdd;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL WmfEvtIoDeviceControl;
 
-// HID mini-driver callbacks
-NTSTATUS WmfGetReportDescriptor(IN WDFDEVICE Device, IN WDFREQUEST Request);
-NTSTATUS WmfGetDeviceAttributes(IN WDFDEVICE Device, IN WDFREQUEST Request);
-NTSTATUS WmfGetFeatureReport(IN WDFDEVICE Device, IN WDFREQUEST Request);
-NTSTATUS WmfReadReport(IN WDFDEVICE Device, IN WDFREQUEST Request);
+// ---- Internal helpers ----
+NTSTATUS WmfCreateDefaultQueue(_In_ WDFDEVICE Device, _Out_ WDFQUEUE* Queue);
+NTSTATUS WmfCreateManualQueue(_In_ WDFDEVICE Device, _Out_ WDFQUEUE* Queue);
 
-// Called from IOCTL handler to complete a pending HID read with new report data
-VOID WmfCompleteReadRequest(IN WDFDEVICE Device, IN WMF_PTP_REPORT* Report);
+NTSTATUS WmfGetHidDescriptor(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
+NTSTATUS WmfGetReportDescriptor(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
+NTSTATUS WmfGetDeviceAttributes(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
+NTSTATUS WmfReadReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request, _Out_ BOOLEAN* CompleteRequest);
+NTSTATUS WmfGetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
+NTSTATUS WmfSetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
+NTSTATUS WmfGetString(_In_ WDFREQUEST Request);
+NTSTATUS WmfGetIndexedString(_In_ WDFREQUEST Request);
 
-// Manual queue for pending HID read requests (extern so WmfEvtDeviceAdd can init it)
-extern WDFQUEUE g_ReadQueue;
+NTSTATUS WmfHandleSubmitReport(_In_ PDEVICE_CONTEXT DevCtx, _In_ WDFREQUEST Request);
+VOID     WmfCompleteReadRequest(_In_ PDEVICE_CONTEXT DevCtx, _In_ PUCHAR ReportBuffer, _In_ ULONG ReportSize);
+
+// ---- Helpers for UMDF HID xfer packets ----
+NTSTATUS RequestGetHidXferPacket_ToReadFromDevice(
+    _In_ WDFREQUEST Request,
+    _Out_ HID_XFER_PACKET* Packet);
+
+NTSTATUS RequestGetHidXferPacket_ToWriteToDevice(
+    _In_ WDFREQUEST Request,
+    _Out_ HID_XFER_PACKET* Packet);
+
+NTSTATUS RequestCopyFromBuffer(
+    _In_ WDFREQUEST Request,
+    _In_ PVOID SourceBuffer,
+    _In_ size_t NumBytesToCopyFrom);
