@@ -87,10 +87,8 @@ WmfEvtDeviceAdd(
     deviceContext->Device = device;
     deviceContext->HasReport = FALSE;
     deviceContext->InputMode = 0x03; // Start in touchpad mode
-    RtlZeroMemory(&deviceContext->LastReport, sizeof(WMF_PTP_REPORT));
 
     // HID device attributes
-    RtlZeroMemory(&deviceContext->HidDeviceAttributes, sizeof(HID_DEVICE_ATTRIBUTES));
     deviceContext->HidDeviceAttributes.Size = sizeof(HID_DEVICE_ATTRIBUTES);
     deviceContext->HidDeviceAttributes.VendorID = WMF_VID;
     deviceContext->HidDeviceAttributes.ProductID = WMF_PID;
@@ -115,6 +113,20 @@ WmfEvtDeviceAdd(
     status = WmfCreateManualQueue(device, &deviceContext->ManualQueue);
     if (!NT_SUCCESS(status)) {
         return status;
+    }
+
+    // Create device interface for user-mode app access
+    // The app will use SetupDi to find this interface
+    {
+        // GUID_DEVINTERFACE_WMF_VIRTUAL_PAD = {B5A2C4D1-3E7F-4A8B-9C6D-1F2E3A4B5C6D}
+        static const GUID GUID_DEVINTERFACE_WMF = 
+            { 0xB5A2C4D1, 0x3E7F, 0x4A8B, { 0x9C, 0x6D, 0x1F, 0x2E, 0x3A, 0x4B, 0x5C, 0x6D } };
+        
+        status = WdfDeviceCreateDeviceInterface(device, &GUID_DEVINTERFACE_WMF, NULL);
+        // Non-fatal
+        if (!NT_SUCCESS(status)) {
+            status = STATUS_SUCCESS;
+        }
     }
 
     return STATUS_SUCCESS;
