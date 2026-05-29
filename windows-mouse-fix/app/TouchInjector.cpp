@@ -73,7 +73,7 @@ bool TouchInjector::submitReport(const WMF_PTP_REPORT& report) {
         pt.pointerInfo.pointerFlags =
             POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT |
             (i == 0 ? POINTER_FLAG_PRIMARY : 0) |
-            (c.tip_switch ? POINTER_FLAG_DOWN : POINTER_FLAG_UP);
+            ((c.flags & WMF_CONTACT_FLAG_TIP_SWITCH) ? POINTER_FLAG_DOWN : POINTER_FLAG_UP);
 
         pt.touchFlags   = TOUCH_FLAG_NONE;
         pt.touchMask    = TOUCH_MASK_CONTACTAREA | TOUCH_MASK_PRESSURE;

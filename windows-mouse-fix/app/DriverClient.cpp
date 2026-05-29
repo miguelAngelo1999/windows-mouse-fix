@@ -5,6 +5,7 @@
 #include "DriverClient.h"
 #include <setupapi.h>
 #include <cstdio>
+#include <cstdlib>
 
 #pragma comment(lib, "setupapi.lib")
 
