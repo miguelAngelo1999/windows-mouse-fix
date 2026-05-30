@@ -30,10 +30,13 @@ bool TouchInjector::init() {
     }
 
     // Initialize touch injection with max 2 contacts
-    // TOUCH_FEEDBACK_NONE = no visual feedback dots
-    if (!m_pfnInit(2, TOUCH_FEEDBACK_NONE)) {
-        m_available = false;
-        return false;
+    // TOUCH_FEEDBACK_DEFAULT = 1 (NONE fails on some ARM64 configs)
+    if (!m_pfnInit(2, TOUCH_FEEDBACK_DEFAULT)) {
+        // Try INDIRECT as fallback
+        if (!m_pfnInit(2, TOUCH_FEEDBACK_INDIRECT)) {
+            m_available = false;
+            return false;
+        }
     }
 
     m_available = true;
