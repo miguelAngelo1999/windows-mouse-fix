@@ -43,45 +43,74 @@ bool TouchInjector::init() {
 bool TouchInjector::submitReport(const WMF_PTP_REPORT& report) {
     if (!m_available) return false;
 
-    if (report.contact_count == 0) {
-        // Lift all fingers
-        for (int i = 0; i < 2; i++) {
-            m_contacts[i].pointerInfo.pointerFlags =
-                POINTER_FLAG_UP | POINTER_FLAG_INRANGE;
-        }
-        return m_pfnInject(2, m_contacts) != FALSE;
-    }
-
-    // Map PTP logical coords (0-4095) to screen pixels
     int screenW = GetSystemMetrics(SM_CXSCREEN);
     int screenH = GetSystemMetrics(SM_CYSCREEN);
+
+    if (report.contact_count == 0) {
+        // Finger lift — send UP for all active contacts
+        for (int i = 0; i < 2; i++) {
+            if (m_contactDown[i]) {
+                m_contacts[i].pointerInfo.pointerFlags =
+                    POINTER_FLAG_UP | POINTER_FLAG_INRANGE;
+                m_contactDown[i] = false;
+            } else {
+                // Already up — send a no-op update
+                m_contacts[i].pointerInfo.pointerFlags = POINTER_FLAG_NONE;
+            }
+        }
+        // Only inject contacts that were actually down
+        int count = 0;
+        POINTER_TOUCH_INFO toSend[2];
+        for (int i = 0; i < 2; i++) {
+            if (m_contacts[i].pointerInfo.pointerFlags != POINTER_FLAG_NONE) {
+                toSend[count++] = m_contacts[i];
+            }
+        }
+        if (count > 0) {
+            return m_pfnInject(count, toSend) != FALSE;
+        }
+        return true;
+    }
 
     int count = (report.contact_count < 2) ? (int)report.contact_count : 2;
     for (int i = 0; i < count; i++) {
         const WMF_CONTACT& c = report.contacts[i];
-
         POINTER_TOUCH_INFO& pt = m_contacts[i];
         memset(&pt, 0, sizeof(pt));
 
         pt.pointerInfo.pointerType = PT_TOUCH;
         pt.pointerInfo.pointerId   = c.contact_id;
 
-        // Convert logical 0-4095 to screen coordinates
         pt.pointerInfo.ptPixelLocation.x = (c.x * screenW) / 4095;
         pt.pointerInfo.ptPixelLocation.y = (c.y * screenH) / 4095;
 
-        pt.pointerInfo.pointerFlags =
-            POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT |
-            (i == 0 ? POINTER_FLAG_PRIMARY : 0) |
-            ((c.flags & WMF_CONTACT_FLAG_TIP_SWITCH) ? POINTER_FLAG_DOWN : POINTER_FLAG_UP);
+        bool isDown = (c.flags & WMF_CONTACT_FLAG_TIP_SWITCH) != 0;
+        bool wasPreviouslyDown = m_contactDown[i];
 
+        DWORD flags = POINTER_FLAG_INRANGE;
+        if (isDown) {
+            flags |= POINTER_FLAG_INCONTACT;
+            if (!wasPreviouslyDown) {
+                flags |= POINTER_FLAG_DOWN;  // first touch
+            } else {
+                flags |= POINTER_FLAG_UPDATE; // continuing touch
+            }
+            m_contactDown[i] = true;
+        } else {
+            flags |= POINTER_FLAG_UP;
+            m_contactDown[i] = false;
+        }
+
+        if (i == 0) flags |= POINTER_FLAG_PRIMARY;
+
+        pt.pointerInfo.pointerFlags = flags;
         pt.touchFlags   = TOUCH_FLAG_NONE;
         pt.touchMask    = TOUCH_MASK_CONTACTAREA | TOUCH_MASK_PRESSURE;
         pt.pressure     = 512;
-        pt.rcContact.left   = pt.pointerInfo.ptPixelLocation.x - 2;
-        pt.rcContact.right  = pt.pointerInfo.ptPixelLocation.x + 2;
-        pt.rcContact.top    = pt.pointerInfo.ptPixelLocation.y - 2;
-        pt.rcContact.bottom = pt.pointerInfo.ptPixelLocation.y + 2;
+        pt.rcContact.left   = pt.pointerInfo.ptPixelLocation.x - 3;
+        pt.rcContact.right  = pt.pointerInfo.ptPixelLocation.x + 3;
+        pt.rcContact.top    = pt.pointerInfo.ptPixelLocation.y - 3;
+        pt.rcContact.bottom = pt.pointerInfo.ptPixelLocation.y + 3;
     }
 
     return m_pfnInject(count, m_contacts) != FALSE;

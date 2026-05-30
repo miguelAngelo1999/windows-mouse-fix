@@ -1,14 +1,10 @@
 #pragma once
 //
 // TouchInjector.h
-// Fallback touch injector using Windows InjectTouchInput API.
-// Used when the WmfVirtualPad driver is not installed.
-//
-// IMPORTANT: InjectTouchInput does NOT go through PrecisionTouchPad.sys,
-// so rubber-band and OS momentum won't work with this path.
-// This is purely for testing the pipeline end-to-end without the driver.
-// The real driver path (DriverClient -> WmfVirtualPad) is required for
-// full functionality.
+// Touch injector using Windows InjectTouchInput API.
+// Produces smooth scroll with momentum and rubber-band in Windows 11
+// when used with proper DOWN/UPDATE/UP pointer flag sequencing.
+// Used as the primary input delivery path (PrecisionTouchPad.sys not required).
 //
 #include <windows.h>
 #include "../shared/WmfIoctl.h"
@@ -25,6 +21,7 @@ public:
 private:
     bool            m_available = false;
     POINTER_TOUCH_INFO m_contacts[2] = {};
+    bool            m_contactDown[2] = { false, false };  // track DOWN/UPDATE/UP state
 
     // Function pointers (loaded dynamically — not available on all Windows versions)
     typedef BOOL (WINAPI* PFN_InitializeTouchInjection)(UINT32, DWORD);

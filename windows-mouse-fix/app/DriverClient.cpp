@@ -1,16 +1,22 @@
 //
 // DriverClient.cpp
-// Communicates with WmfVirtualPad via HidD_SetOutputReport on the HID child device.
+// Communicates with WmfVirtualPad via DeviceIoControl on the device interface.
+// Falls back to TouchInjector (InjectTouchInput) when driver is not installed.
 //
 
 #include "DriverClient.h"
 #include <setupapi.h>
 #include <hidsdi.h>
+#include <initguid.h>
 #include <cstdio>
 #include <cstdlib>
 
 #pragma comment(lib, "setupapi.lib")
 #pragma comment(lib, "hid.lib")
+
+// Device interface GUID — must match WmfVirtualPad.c
+DEFINE_GUID(GUID_DEVINTERFACE_WMF,
+    0xB5A2C4D1, 0x3E7F, 0x4A8B, 0x9C, 0x6D, 0x1F, 0x2E, 0x3A, 0x4B, 0x5C, 0x6D);
 
 DriverClient::DriverClient()
     : m_hDevice(INVALID_HANDLE_VALUE)
