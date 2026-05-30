@@ -80,7 +80,6 @@ private:
     std::thread      m_scrollThread;
     std::atomic<bool> m_running  { false };
     std::atomic<bool> m_shutdown { false };
-    std::atomic<bool> m_resetWheelAccum { false };
 
     // Idle lift timer — uses a single persistent thread + condition variable
     std::thread              m_liftThread;

@@ -166,8 +166,6 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
         m_subPixelator.reset();
         m_contactMapper.reset();
         cancelLift();
-        // Reset wheel accumulators (they're static in onAnimationFrame — reset via flag)
-        m_resetWheelAccum = true;
     }
 
     // Compute pixels for this tick
@@ -219,82 +217,17 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
 
 void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
 
-    if (m_driver.mode() == DriverMode::VirtualDriver) {
-        // Full PTP mode: send contact reports to driver via HID output report.
-        // Also inject touch directly — the HID read path only works when
-        // PrecisionTouchPad.sys is present to consume input reports.
-        WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
-        m_driver.submitReport(report);  // sends via HidD_SetOutputReport
+    // Always use InjectTouchInput for input delivery.
+    // The HID driver path requires PrecisionTouchPad.sys to consume reads —
+    // not present on this machine. InjectTouchInput works everywhere.
+    WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
+    m_touchInjector.submitReport(report);
 
-        // Also inject via InjectTouchInput so scroll works even without PTP.sys
-        m_touchInjector.submitReport(report);
-
-        if (isLast) {
-            WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
-            m_driver.submitReport(liftReport);
-            m_touchInjector.submitReport(liftReport);
-            m_contactMapper.reset();
-            m_liftPending.store(false);
-        }
-    } else {
-        // Basic mode (no driver): use a hybrid approach.
-        // 1. Inject touch input via InjectTouchInput (works for UWP apps + Start Menu)
-        // 2. Also PostMessage WM_MOUSEWHEEL (works for legacy Win32 apps)
-        // The receiving app uses whichever it understands.
-
-        static double s_wheelAccumY = 0.0;
-        static double s_wheelAccumX = 0.0;
-
-        if (m_resetWheelAccum.exchange(false)) {
-            s_wheelAccumY = 0.0;
-            s_wheelAccumX = 0.0;
-        }
-
-        // === Method 1: Touch injection (UWP/Modern apps) ===
-        // Build a 2-finger "touch and drag" report
-        WMF_PTP_REPORT touchReport = m_contactMapper.map(dy, dx, false);
-        m_driver.submitReport(touchReport); // calls TouchInjector internally
-
-        // === Method 2: PostMessage (Legacy apps) ===
-        POINT pt;
-        GetCursorPos(&pt);
-        HWND hwndTarget = WindowFromPoint(pt);
-        if (!hwndTarget) hwndTarget = GetForegroundWindow();
-        HWND hwndFg = GetForegroundWindow();
-        if (hwndFg) {
-            POINT clientPt = pt;
-            ScreenToClient(hwndFg, &clientPt);
-            HWND hwndDeep = RealChildWindowFromPoint(hwndFg, clientPt);
-            if (hwndDeep && hwndDeep != hwndFg) hwndTarget = hwndDeep;
-        }
-
-        if (dy != 0) {
-            s_wheelAccumY += dy * (120.0 / 40.0);
-            int wheelDelta = (int)s_wheelAccumY;
-            if (wheelDelta != 0) {
-                s_wheelAccumY -= wheelDelta;
-                WPARAM wp = MAKEWPARAM(0, (SHORT)(-wheelDelta));
-                LPARAM lp = MAKELPARAM((WORD)pt.x, (WORD)pt.y);
-                PostMessage(hwndTarget, WM_MOUSEWHEEL, wp, lp);
-            }
-        }
-        if (dx != 0) {
-            s_wheelAccumX += dx * (120.0 / 40.0);
-            int wheelDelta = (int)s_wheelAccumX;
-            if (wheelDelta != 0) {
-                s_wheelAccumX -= wheelDelta;
-                WPARAM wp = MAKEWPARAM(0, (SHORT)(-wheelDelta));
-                LPARAM lp = MAKELPARAM((WORD)pt.x, (WORD)pt.y);
-                PostMessage(hwndTarget, WM_MOUSEHWHEEL, wp, lp);
-            }
-        }
-
-        if (isLast) {
-            // Lift fingers to end touch gesture (triggers OS momentum/rubber-band)
-            WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
-            m_driver.submitReport(liftReport);
-            m_contactMapper.reset();
-        }
+    if (isLast) {
+        WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
+        m_touchInjector.submitReport(liftReport);
+        m_contactMapper.reset();
+        m_liftPending.store(false);
     }
 }
 
