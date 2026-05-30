@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <KIT_SHARED_IncludePath Condition="'$(KIT_SHARED_IncludePath)' == ''">$(WindowsSdkDir)Include\$(WindowsTargetPlatformVersion)\shared</KIT_SHARED_IncludePath>
+    <WindowsSdkDir Condition="'$(WindowsSdkDir)' == ''">C:\Program Files (x86)\Windows Kits\10\</WindowsSdkDir>
+    <WindowsSdkDir Condition="!HasTrailingSlash('$(WindowsSdkDir)')">$(WindowsSdkDir)\</WindowsSdkDir>
+  </PropertyGroup>
+</Project>

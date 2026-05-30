@@ -69,3 +69,11 @@ NTSTATUS RequestCopyFromBuffer(
     _In_ WDFREQUEST Request,
     _In_ PVOID SourceBuffer,
     _In_ size_t NumBytesToCopyFrom);
+
+NTSTATUS RequestGetHidXferPacket_ToReadFromDevice(
+    _In_  WDFREQUEST     Request,
+    _Out_ HID_XFER_PACKET* Packet);
+
+NTSTATUS RequestGetHidXferPacket_ToWriteToDevice(
+    _In_  WDFREQUEST     Request,
+    _Out_ HID_XFER_PACKET* Packet);
