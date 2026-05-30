@@ -217,17 +217,26 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
 
 void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
 
-    // Always use InjectTouchInput for input delivery.
-    // The HID driver path requires PrecisionTouchPad.sys to consume reads —
-    // not present on this machine. InjectTouchInput works everywhere.
-    WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
-    m_touchInjector.submitReport(report);
+    // InjectTouchInput doesn't work in Parallels VM — use SendInput wheel events instead.
+    // This works in all apps including Start Menu (Windows 11 routes wheel to focused element).
 
-    if (isLast) {
-        WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
-        m_touchInjector.submitReport(liftReport);
-        m_contactMapper.reset();
-        m_liftPending.store(false);
+    if (dy != 0) {
+        INPUT input = {};
+        input.type = INPUT_MOUSE;
+        input.mi.dwFlags = MOUSEEVENTF_WHEEL;
+        input.mi.dwExtraInfo = MouseHook::kWmfMarker;  // prevent re-interception
+        // dy > 0 = fingers moving down = scroll up = positive WHEEL_DELTA
+        input.mi.mouseData = (DWORD)(SHORT)(dy * 3);
+        SendInput(1, &input, sizeof(INPUT));
+    }
+
+    if (dx != 0) {
+        INPUT input = {};
+        input.type = INPUT_MOUSE;
+        input.mi.dwFlags = MOUSEEVENTF_HWHEEL;
+        input.mi.dwExtraInfo = MouseHook::kWmfMarker;
+        input.mi.mouseData = (DWORD)(SHORT)(dx * 3);
+        SendInput(1, &input, sizeof(INPUT));
     }
 }
 

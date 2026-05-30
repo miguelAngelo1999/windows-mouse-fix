@@ -87,6 +87,11 @@ bool TouchInjector::submitReport(const WMF_PTP_REPORT& report) {
         pt.pointerInfo.ptPixelLocation.x = (c.x * screenW) / 4095;
         pt.pointerInfo.ptPixelLocation.y = (c.y * screenH) / 4095;
 
+        // ptHimetricLocation must be set (100 himetric units per mm, ~2540 per inch)
+        // Convert pixels to himetric: multiply by 2540 / DPI
+        pt.pointerInfo.ptHimetricLocation.x = pt.pointerInfo.ptPixelLocation.x * 2540 / 96;
+        pt.pointerInfo.ptHimetricLocation.y = pt.pointerInfo.ptPixelLocation.y * 2540 / 96;
+
         bool isDown = (c.flags & WMF_CONTACT_FLAG_TIP_SWITCH) != 0;
         bool wasPreviouslyDown = m_contactDown[i];
 
@@ -118,3 +123,4 @@ bool TouchInjector::submitReport(const WMF_PTP_REPORT& report) {
 
     return m_pfnInject(count, m_contacts) != FALSE;
 }
+
