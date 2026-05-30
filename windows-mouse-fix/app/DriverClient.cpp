@@ -1,13 +1,16 @@
 //
 // DriverClient.cpp
+// Communicates with WmfVirtualPad via HidD_SetOutputReport on the HID child device.
 //
 
 #include "DriverClient.h"
 #include <setupapi.h>
+#include <hidsdi.h>
 #include <cstdio>
 #include <cstdlib>
 
 #pragma comment(lib, "setupapi.lib")
+#pragma comment(lib, "hid.lib")
 
 DriverClient::DriverClient()
     : m_hDevice(INVALID_HANDLE_VALUE)
@@ -21,97 +24,85 @@ DriverClient::~DriverClient() {
 }
 
 DriverMode DriverClient::open() {
-    // Try the real driver first
     if (tryOpenDriver()) {
         m_mode = DriverMode::VirtualDriver;
+        // Write mode to log file for diagnostics
+        FILE* f = nullptr;
+        fopen_s(&f, "C:\\Users\\virgoh\\wmf_mode.txt", "w");
+        if (f) { fprintf(f, "VirtualDriver\n"); fclose(f); }
         return m_mode;
     }
-
-    // Fall back to InjectTouchInput
     if (m_touchInjector.init()) {
         m_mode = DriverMode::TouchInject;
+        FILE* f = nullptr;
+        fopen_s(&f, "C:\\Users\\virgoh\\wmf_mode.txt", "w");
+        if (f) { fprintf(f, "TouchInject\n"); fclose(f); }
         return m_mode;
     }
-
     m_mode = DriverMode::NotConnected;
+    FILE* f = nullptr;
+    fopen_s(&f, "C:\\Users\\virgoh\\wmf_mode.txt", "w");
+    if (f) { fprintf(f, "NotConnected\n"); fclose(f); }
     return m_mode;
 }
 
 bool DriverClient::tryOpenDriver() {
     if (m_hDevice != INVALID_HANDLE_VALUE) return true;
 
-    // First try the symbolic link (works if driver creates one)
-    m_hDevice = CreateFileW(
-        WMF_DEVICE_SYMLINK,
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr
-    );
+    // Find our HID child device (hidclass instance)
+    GUID hidGuid;
+    HidD_GetHidGuid(&hidGuid);
 
-    if (m_hDevice != INVALID_HANDLE_VALUE) return true;
-
-    // Fall back to device interface discovery
-    // GUID_DEVINTERFACE_WMF_VIRTUAL_PAD = {B5A2C4D1-3E7F-4A8B-9C6D-1F2E3A4B5C6D}
-    static const GUID GUID_DEVINTERFACE_WMF = 
-        { 0xB5A2C4D1, 0x3E7F, 0x4A8B, { 0x9C, 0x6D, 0x1F, 0x2E, 0x3A, 0x4B, 0x5C, 0x6D } };
-
-    HDEVINFO devInfo = SetupDiGetClassDevsW(
-        &GUID_DEVINTERFACE_WMF, nullptr, nullptr,
+    HDEVINFO devInfo = SetupDiGetClassDevsW(&hidGuid, nullptr, nullptr,
         DIGCF_DEVICEINTERFACE | DIGCF_PRESENT);
-
-    if (devInfo == INVALID_HANDLE_VALUE) {
-        m_lastError = GetLastError();
-        return false;
-    }
+    if (devInfo == INVALID_HANDLE_VALUE) return false;
 
     SP_DEVICE_INTERFACE_DATA ifData = {};
     ifData.cbSize = sizeof(SP_DEVICE_INTERFACE_DATA);
 
-    if (!SetupDiEnumDeviceInterfaces(devInfo, nullptr, &GUID_DEVINTERFACE_WMF, 0, &ifData)) {
-        SetupDiDestroyDeviceInfoList(devInfo);
-        m_lastError = GetLastError();
-        return false;
+    for (DWORD i = 0; SetupDiEnumDeviceInterfaces(devInfo, nullptr, &hidGuid, i, &ifData); i++) {
+        DWORD sz = 0;
+        SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, nullptr, 0, &sz, nullptr);
+        auto det = (SP_DEVICE_INTERFACE_DETAIL_DATA_W*)malloc(sz);
+        if (!det) continue;
+        det->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
+        SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, det, sz, nullptr, nullptr);
+
+        // Our device path contains "hidclass"
+        bool isOurs = (wcsstr(det->DevicePath, L"hidclass") != nullptr ||
+                       wcsstr(det->DevicePath, L"HIDCLASS") != nullptr);
+
+        if (isOurs) {
+            HANDLE h = CreateFileW(det->DevicePath,
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                nullptr, OPEN_EXISTING, 0, nullptr);
+
+            if (h != INVALID_HANDLE_VALUE) {
+                // Verify it's our touchpad by checking HID caps
+                PHIDP_PREPARSED_DATA preparsed = nullptr;
+                if (HidD_GetPreparsedData(h, &preparsed)) {
+                    HIDP_CAPS caps;
+                    if (HidP_GetCaps(preparsed, &caps) == HIDP_STATUS_SUCCESS &&
+                        caps.UsagePage == 0x000D &&  // Digitizer
+                        caps.Usage == 0x0005 &&       // Touch Pad
+                        caps.OutputReportByteLength == 34) {
+                        HidD_FreePreparsedData(preparsed);
+                        free(det);
+                        SetupDiDestroyDeviceInfoList(devInfo);
+                        m_hDevice = h;
+                        return true;
+                    }
+                    HidD_FreePreparsedData(preparsed);
+                }
+                CloseHandle(h);
+            }
+        }
+        free(det);
     }
 
-    // Get required size
-    DWORD requiredSize = 0;
-    SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, nullptr, 0, &requiredSize, nullptr);
-
-    auto detailBuf = (SP_DEVICE_INTERFACE_DETAIL_DATA_W*)malloc(requiredSize);
-    if (!detailBuf) {
-        SetupDiDestroyDeviceInfoList(devInfo);
-        return false;
-    }
-    detailBuf->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
-
-    if (!SetupDiGetDeviceInterfaceDetailW(devInfo, &ifData, detailBuf, requiredSize, nullptr, nullptr)) {
-        free(detailBuf);
-        SetupDiDestroyDeviceInfoList(devInfo);
-        m_lastError = GetLastError();
-        return false;
-    }
-
-    m_hDevice = CreateFileW(
-        detailBuf->DevicePath,
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr
-    );
-
-    free(detailBuf);
     SetupDiDestroyDeviceInfoList(devInfo);
-
-    if (m_hDevice == INVALID_HANDLE_VALUE) {
-        m_lastError = GetLastError();
-        return false;
-    }
-    return true;
+    return false;
 }
 
 void DriverClient::close() {
@@ -129,20 +120,17 @@ bool DriverClient::submitReport(const WMF_PTP_REPORT& report) {
         if (m_hDevice == INVALID_HANDLE_VALUE) {
             if (!tryReopen()) return false;
         }
-        DWORD bytesReturned = 0;
-        BOOL ok = DeviceIoControl(
-            m_hDevice,
-            IOCTL_WMF_SUBMIT_REPORT,
-            (LPVOID)&report,
-            (DWORD)sizeof(WMF_PTP_REPORT),
-            nullptr, 0,
-            &bytesReturned,
-            nullptr
-        );
+
+        // Build output report: [reportId=0x06][33 bytes of PTP data]
+        // PTP data = WMF_PTP_REPORT without the report_id byte
+        unsigned char outBuf[34];
+        outBuf[0] = 0x06; // output report ID
+        memcpy(outBuf + 1, ((const unsigned char*)&report) + 1, 33);
+
+        BOOL ok = HidD_SetOutputReport(m_hDevice, outBuf, sizeof(outBuf));
         if (!ok) {
             m_lastError = GetLastError();
             close();
-            // Try falling back to touch injection
             if (m_touchInjector.isAvailable() || m_touchInjector.init()) {
                 m_mode = DriverMode::TouchInject;
                 return m_touchInjector.submitReport(report);

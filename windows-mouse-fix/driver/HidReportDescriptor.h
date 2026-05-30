@@ -262,6 +262,18 @@ static const unsigned char kWmfHidReportDescriptor[] = {
     0x96, 0x00, 0x01,        //   Report Count (256)
     0xB1, 0x02,              //   Feature (Data, Variable, Absolute)
 
+    // ======== Output Report: User-mode data channel (Report ID 0x06) ========
+    // App sends PTP report data via HidD_SetOutputReport with this report ID
+    // Size: 33 bytes (matches input report without report_id)
+    0x06, 0x00, 0xFF,        //   Usage Page (Vendor Defined)
+    0x85, 0x06,              //   Report ID (6)
+    0x09, 0x01,              //   Usage (Vendor Usage 1)
+    0x15, 0x00,              //   Logical Minimum (0)
+    0x26, 0xFF, 0x00,        //   Logical Maximum (255)
+    0x75, 0x08,              //   Report Size (8)
+    0x95, 0x21,              //   Report Count (33) = sizeof(WMF_PTP_REPORT) - 1
+    0x91, 0x02,              //   Output (Data, Variable, Absolute)
+
     0xC0,                    // End Collection (Touch Pad)
 };
 

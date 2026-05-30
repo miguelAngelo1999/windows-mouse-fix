@@ -57,20 +57,13 @@ NTSTATUS WmfGetDeviceAttributes(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUES
 NTSTATUS WmfReadReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request, _Out_ BOOLEAN* CompleteRequest);
 NTSTATUS WmfGetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
 NTSTATUS WmfSetFeature(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
+NTSTATUS WmfGetInputReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
+NTSTATUS WmfWriteReport(_In_ PQUEUE_CONTEXT QueueContext, _In_ WDFREQUEST Request);
 NTSTATUS WmfGetString(_In_ WDFREQUEST Request);
 NTSTATUS WmfGetIndexedString(_In_ WDFREQUEST Request);
 
 NTSTATUS WmfHandleSubmitReport(_In_ PDEVICE_CONTEXT DevCtx, _In_ WDFREQUEST Request);
 VOID     WmfCompleteReadRequest(_In_ PDEVICE_CONTEXT DevCtx, _In_ PUCHAR ReportBuffer, _In_ ULONG ReportSize);
-
-// ---- Helpers for UMDF HID xfer packets ----
-NTSTATUS RequestGetHidXferPacket_ToReadFromDevice(
-    _In_ WDFREQUEST Request,
-    _Out_ HID_XFER_PACKET* Packet);
-
-NTSTATUS RequestGetHidXferPacket_ToWriteToDevice(
-    _In_ WDFREQUEST Request,
-    _Out_ HID_XFER_PACKET* Packet);
 
 NTSTATUS RequestCopyFromBuffer(
     _In_ WDFREQUEST Request,
