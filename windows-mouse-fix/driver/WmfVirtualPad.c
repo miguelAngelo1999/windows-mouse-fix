@@ -4,7 +4,7 @@
  *
  * Architecture:
  *   - Creates a virtual HID device that Windows recognizes as a PTP touchpad
- *   - Accepts IOCTL_WMF_SUBMIT_REPORT from user-mode app
+ *   - Accepts HidD_SetOutputReport (report ID 0x06) from user-mode app
  *   - Forwards raw HID report bytes to hidclass.sys via mshidumdf.sys
  *
  * Based on the VHidMini2 UMDF2 sample from the Windows Driver Kit.
@@ -348,7 +348,7 @@ WmfGetDeviceAttributes(
 }
 
 // ---------------------------------------------------------------------------
-// IOCTL_HID_READ_REPORT — pend to manual queue
+// IOCTL_HID_READ_REPORT — complete immediately if report available, else pend
 // ---------------------------------------------------------------------------
 
 NTSTATUS
@@ -359,10 +359,39 @@ WmfReadReport(
 )
 {
     NTSTATUS status;
+    PDEVICE_CONTEXT devCtx = QueueContext->DeviceContext;
 
+    // If we have a stored report, complete immediately
+    WdfSpinLockAcquire(devCtx->ReportLock);
+    BOOLEAN hasReport = devCtx->HasReport;
+    WMF_PTP_REPORT lastReport = devCtx->LastReport;
+    if (hasReport) {
+        devCtx->HasReport = FALSE; // consume it
+    }
+    WdfSpinLockRelease(devCtx->ReportLock);
+
+    if (hasReport) {
+        // Complete immediately with stored report
+        WDFMEMORY memory;
+        status = WdfRequestRetrieveOutputMemory(Request, &memory);
+        if (NT_SUCCESS(status)) {
+            size_t outputSize;
+            WdfMemoryGetBuffer(memory, &outputSize);
+            ULONG bytesToCopy = sizeof(WMF_PTP_REPORT);
+            if (outputSize < bytesToCopy) bytesToCopy = (ULONG)outputSize;
+            status = WdfMemoryCopyFromBuffer(memory, 0, &lastReport, bytesToCopy);
+            if (NT_SUCCESS(status)) {
+                WdfRequestSetInformation(Request, bytesToCopy);
+            }
+        }
+        *CompleteRequest = TRUE;
+        return status;
+    }
+
+    // No report available — forward to manual queue
     status = WdfRequestForwardToIoQueue(
         Request,
-        QueueContext->DeviceContext->ManualQueue);
+        devCtx->ManualQueue);
 
     if (!NT_SUCCESS(status)) {
         *CompleteRequest = TRUE;
@@ -446,7 +475,6 @@ WmfGetFeature(
 
     default:
         // Unknown feature report — return STATUS_INVALID_PARAMETER
-        // but don't crash
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -556,6 +584,9 @@ WmfGetInputReport(
 //
 // In UMDF, mshidumdf.sys passes:
 //   Input buffer = [reportId (1 byte)] [report data ...]
+//
+// App sends PTP data via HidD_SetOutputReport with report ID 0x06.
+// We store it and complete any pending HID read request.
 // ---------------------------------------------------------------------------
 
 NTSTATUS
@@ -655,7 +686,7 @@ WmfGetIndexedString(
 }
 
 // ---------------------------------------------------------------------------
-// IOCTL_WMF_SUBMIT_REPORT — user-mode app submits a PTP report
+// IOCTL_WMF_SUBMIT_REPORT — user-mode app submits a PTP report directly
 // ---------------------------------------------------------------------------
 
 NTSTATUS
