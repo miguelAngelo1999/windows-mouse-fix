@@ -32,6 +32,9 @@ bool ScrollPipeline::start() {
     m_liftShutdown.store(false);
     m_running.store(true);
 
+    // Initialize touch injector for VirtualDriver fallback
+    m_touchInjector.init();
+
     // Start scroll worker thread
     m_scrollThread = std::thread(&ScrollPipeline::scrollThreadFunc, this);
 
@@ -217,13 +220,19 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
 void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
 
     if (m_driver.mode() == DriverMode::VirtualDriver) {
-        // Full PTP mode: send contact reports to driver
+        // Full PTP mode: send contact reports to driver via HID output report.
+        // Also inject touch directly — the HID read path only works when
+        // PrecisionTouchPad.sys is present to consume input reports.
         WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
-        m_driver.submitReport(report);
+        m_driver.submitReport(report);  // sends via HidD_SetOutputReport
+
+        // Also inject via InjectTouchInput so scroll works even without PTP.sys
+        m_touchInjector.submitReport(report);
 
         if (isLast) {
             WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
             m_driver.submitReport(liftReport);
+            m_touchInjector.submitReport(liftReport);
             m_contactMapper.reset();
             m_liftPending.store(false);
         }

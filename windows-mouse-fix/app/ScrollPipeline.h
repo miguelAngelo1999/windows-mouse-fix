@@ -14,6 +14,7 @@
 #include "SubPixelator.h"
 #include "ContactMapper.h"
 #include "DriverClient.h"
+#include "TouchInjector.h"
 #include "Settings.h"
 
 #include <thread>
@@ -64,6 +65,7 @@ private:
     SubPixelator     m_subPixelator;
     ContactMapper    m_contactMapper;
     DriverClient&    m_driver;
+    TouchInjector    m_touchInjector;  // used in VirtualDriver mode as fallback
 
     // Settings (protected by m_settingsMutex)
     Settings         m_settings;
