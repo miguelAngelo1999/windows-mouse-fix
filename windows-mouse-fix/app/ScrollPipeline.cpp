@@ -33,7 +33,22 @@ bool ScrollPipeline::start() {
     m_running.store(true);
 
     // Initialize touch injector for VirtualDriver fallback
-    m_touchInjector.init();
+    bool touchOk = m_touchInjector.init();
+
+    // Test inject to check if it actually works
+    {
+        FILE* f = nullptr;
+        fopen_s(&f, "C:\\Users\\virgoh\\wmf_touch.txt", "w");
+        if (f) {
+            fprintf(f, "TouchInjector init: %s\n", touchOk ? "OK" : "FAILED");
+            if (touchOk) {
+                // Try a single test inject
+                bool testOk = m_touchInjector.testInject();
+                fprintf(f, "TestInject: %s\n", testOk ? "OK" : "FAILED");
+            }
+            fclose(f);
+        }
+    }
 
     // Start scroll worker thread
     m_scrollThread = std::thread(&ScrollPipeline::scrollThreadFunc, this);
@@ -217,25 +232,36 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
 
 void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
 
-    // InjectTouchInput doesn't work in Parallels VM — use SendInput wheel events instead.
-    // This works in all apps including Start Menu (Windows 11 routes wheel to focused element).
+    // Try InjectTouchInput first (gives rubber-band + momentum in Windows 11).
+    // Falls back to SendInput WHEEL if touch injection isn't available (Parallels VM).
+    if (m_touchInjector.isAvailable()) {
+        WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
+        m_touchInjector.submitReport(report);
+        if (isLast) {
+            WMF_PTP_REPORT lift = m_contactMapper.map(0, 0, true);
+            m_touchInjector.submitReport(lift);
+            m_contactMapper.reset();
+            m_liftPending.store(false);
+        }
+        return;
+    }
 
+    // SendInput fallback — works in Parallels VM and everywhere else.
+    // Negate dy: animator direction=+1 means scroll-down, but WHEEL positive = scroll-up.
     if (dy != 0) {
         INPUT input = {};
         input.type = INPUT_MOUSE;
         input.mi.dwFlags = MOUSEEVENTF_WHEEL;
-        input.mi.dwExtraInfo = MouseHook::kWmfMarker;  // prevent re-interception
-        // dy > 0 = fingers moving down = scroll up = positive WHEEL_DELTA
-        input.mi.mouseData = (DWORD)(SHORT)(dy * 3);
+        input.mi.dwExtraInfo = MouseHook::kWmfMarker;
+        input.mi.mouseData = (DWORD)(SHORT)(-dy * 3);
         SendInput(1, &input, sizeof(INPUT));
     }
-
     if (dx != 0) {
         INPUT input = {};
         input.type = INPUT_MOUSE;
         input.mi.dwFlags = MOUSEEVENTF_HWHEEL;
         input.mi.dwExtraInfo = MouseHook::kWmfMarker;
-        input.mi.mouseData = (DWORD)(SHORT)(dx * 3);
+        input.mi.mouseData = (DWORD)(SHORT)(-dx * 3);
         SendInput(1, &input, sizeof(INPUT));
     }
 }

@@ -17,6 +17,7 @@ public:
     bool init();   // calls InitializeTouchInjection
     bool submitReport(const WMF_PTP_REPORT& report);
     bool isAvailable() const { return m_available; }
+    bool testInject();  // test if InjectTouchInput actually works
 
 private:
     bool            m_available = false;

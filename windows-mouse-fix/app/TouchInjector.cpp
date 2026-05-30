@@ -124,3 +124,29 @@ bool TouchInjector::submitReport(const WMF_PTP_REPORT& report) {
     return m_pfnInject(count, m_contacts) != FALSE;
 }
 
+
+bool TouchInjector::testInject() {
+    if (!m_available) return false;
+    // Try injecting a single touch DOWN+UP at screen center
+    int sw = GetSystemMetrics(SM_CXSCREEN);
+    int sh = GetSystemMetrics(SM_CYSCREEN);
+    POINTER_TOUCH_INFO c = {};
+    c.pointerInfo.pointerType = PT_TOUCH;
+    c.pointerInfo.pointerId = 99;
+    c.pointerInfo.ptPixelLocation.x = sw / 2;
+    c.pointerInfo.ptPixelLocation.y = sh / 2;
+    c.pointerInfo.ptHimetricLocation.x = c.pointerInfo.ptPixelLocation.x * 2540 / 96;
+    c.pointerInfo.ptHimetricLocation.y = c.pointerInfo.ptPixelLocation.y * 2540 / 96;
+    c.pointerInfo.pointerFlags = POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT | POINTER_FLAG_PRIMARY;
+    c.touchFlags = TOUCH_FLAG_NONE;
+    c.touchMask = TOUCH_MASK_CONTACTAREA | TOUCH_MASK_PRESSURE;
+    c.pressure = 512;
+    c.rcContact = { c.pointerInfo.ptPixelLocation.x - 3, c.pointerInfo.ptPixelLocation.y - 3,
+                    c.pointerInfo.ptPixelLocation.x + 3, c.pointerInfo.ptPixelLocation.y + 3 };
+    BOOL r = m_pfnInject(1, &c);
+    if (!r) { m_available = false; return false; }
+    Sleep(16);
+    c.pointerInfo.pointerFlags = POINTER_FLAG_UP | POINTER_FLAG_INRANGE | POINTER_FLAG_PRIMARY;
+    m_pfnInject(1, &c);
+    return true;
+}
