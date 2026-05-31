@@ -1,0 +1,18 @@
+IMPORTANT: Test Signing Required
+
+This installer will enable Windows Test Signing Mode to load
+the virtual touchpad driver. This is required because the
+driver uses a self-signed test certificate.
+
+What this means:
+- A "Test Mode" watermark will appear on your desktop
+- This is normal and expected
+- A REBOOT is required after installation for the driver to load
+
+After rebooting, Windows Mouse Fix will start automatically
+and your mouse scroll wheel will produce smooth, physics-based
+scrolling with momentum.
+
+To disable Test Mode later, run as Administrator:
+  bcdedit /set testsigning off
+  (then uninstall Windows Mouse Fix first)
