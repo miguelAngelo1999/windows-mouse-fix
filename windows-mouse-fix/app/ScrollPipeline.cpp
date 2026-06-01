@@ -6,6 +6,30 @@
 #include <cmath>
 #include <algorithm>
 #include <windows.h>
+#include <cstdio>
+
+// Simple debug log
+static FILE* g_logFile = nullptr;
+static int g_logCount = 0;
+static void wmfLog(const char* fmt, ...) {
+    if (!g_logFile) {
+        char path[MAX_PATH];
+        ExpandEnvironmentStringsA("%APPDATA%\\WindowsMouseFix\\wmf_debug.log", path, MAX_PATH);
+        // Ensure directory exists
+        char dir[MAX_PATH];
+        ExpandEnvironmentStringsA("%APPDATA%\\WindowsMouseFix", dir, MAX_PATH);
+        CreateDirectoryA(dir, nullptr);
+        fopen_s(&g_logFile, path, "w");
+    }
+    if (!g_logFile) return;
+    if (g_logCount > 500) return; // cap log size
+    va_list args;
+    va_start(args, fmt);
+    vfprintf(g_logFile, fmt, args);
+    va_end(args);
+    fflush(g_logFile);
+    g_logCount++;
+}
 
 // ---------------------------------------------------------------------------
 // Constructor / Destructor
@@ -36,19 +60,11 @@ bool ScrollPipeline::start() {
     bool touchOk = m_touchInjector.init();
 
     // Test inject to check if it actually works
-    {
-        FILE* f = nullptr;
-        fopen_s(&f, "C:\\Users\\virgoh\\wmf_touch.txt", "w");
-        if (f) {
-            fprintf(f, "TouchInjector init: %s\n", touchOk ? "OK" : "FAILED");
-            if (touchOk) {
-                // Try a single test inject
-                bool testOk = m_touchInjector.testInject();
-                fprintf(f, "TestInject: %s\n", testOk ? "OK" : "FAILED");
-            }
-            fclose(f);
-        }
+    bool testOk = false;
+    if (touchOk) {
+        testOk = m_touchInjector.testInject();
     }
+    wmfLog("START: touchInit=%d testInject=%d touchAvail=%d\n", touchOk, testOk, m_touchInjector.isAvailable());
 
     // Start scroll worker thread
     m_scrollThread = std::thread(&ScrollPipeline::scrollThreadFunc, this);
@@ -62,6 +78,8 @@ bool ScrollPipeline::start() {
     bool ok = m_hook.install([this](const ScrollEvent& ev) {
         onScrollEvent(ev);
     }, true /* always suppress — we re-inject smoothly */);
+
+    wmfLog("HOOK: installed=%d\n", ok);
 
     if (!ok) {
         stop();
@@ -104,6 +122,7 @@ void ScrollPipeline::applySettings(const Settings& settings) {
 // ---------------------------------------------------------------------------
 
 void ScrollPipeline::onScrollEvent(const ScrollEvent& ev) {
+    wmfLog("SCROLL: delta=%d horiz=%d\n", ev.delta, ev.isHorizontal);
     // This runs on the hook thread — must be FAST, no blocking
     // Just push to queue and signal
     bool pushed = false;
@@ -232,11 +251,18 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
 
 void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
 
+    wmfLog("FRAME: dx=%d dy=%d isLast=%d touchAvail=%d\n", dx, dy, isLast, m_touchInjector.isAvailable());
+
     // Try InjectTouchInput first (gives rubber-band + momentum in Windows 11).
-    // Falls back to SendInput WHEEL if touch injection isn't available (Parallels VM).
+    // Falls back to SendInput WHEEL if touch injection isn't available or fails.
     if (m_touchInjector.isAvailable()) {
         WMF_PTP_REPORT report = m_contactMapper.map(dy, dx, false);
-        m_touchInjector.submitReport(report);
+        bool ok = m_touchInjector.submitReport(report);
+        if (!ok) {
+            // Touch injection failed — fall through to SendInput
+            m_contactMapper.reset();
+            goto sendInput;
+        }
         if (isLast) {
             WMF_PTP_REPORT lift = m_contactMapper.map(0, 0, true);
             m_touchInjector.submitReport(lift);
@@ -246,7 +272,8 @@ void ScrollPipeline::onAnimationFrame(int dx, int dy, bool isLast) {
         return;
     }
 
-    // SendInput fallback — works in Parallels VM and everywhere else.
+sendInput:
+    // SendInput fallback — works everywhere.
     // Negate dy: animator direction=+1 means scroll-down, but WHEEL positive = scroll-up.
     if (dy != 0) {
         INPUT input = {};
