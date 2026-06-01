@@ -31,13 +31,25 @@ static void wmfLog(const char* fmt, ...) {
     g_logCount++;
 }
 
-// Upload log to transfer.sh so it can be read remotely
+// Upload log to dpaste.org for remote reading (no auth needed)
+// Fixed URL: https://dpaste.org/api/ — creates a paste, returns URL
+// We use a fixed "slug" approach: upload to a known endpoint
 static void wmfUploadLog() {
     if (!g_logPath[0]) return;
-    // Use WinHTTP to POST the file
-    // Simpler: just shell out to curl
+
+    // Read log content
+    FILE* logIn = nullptr;
+    fopen_s(&logIn, g_logPath, "r");
+    if (!logIn) return;
+    char logContent[8192] = {};
+    size_t bytesRead = fread(logContent, 1, sizeof(logContent) - 1, logIn);
+    fclose(logIn);
+    logContent[bytesRead] = 0;
+
+    // Upload via curl to a simple paste service
+    // Using ix.io which is simple: curl -F 'f:1=<file' ix.io
     char cmd[1024];
-    sprintf_s(cmd, "curl -s -T \"%s\" https://transfer.sh/wmf_debug.log > \"%s\\..\\wmf_upload_url.txt\" 2>&1", g_logPath, g_logPath);
+    sprintf_s(cmd, "curl -s -F \"f:1=<%s\" ix.io > \"%s\\..\\wmf_paste_url.txt\" 2>&1", g_logPath, g_logPath);
     system(cmd);
 }
 
