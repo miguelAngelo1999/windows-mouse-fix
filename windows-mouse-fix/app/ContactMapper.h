@@ -25,6 +25,9 @@ public:
     // Reset contact state (call when a new scroll gesture begins)
     void reset();
 
+    // Check if a gesture is in progress
+    bool isActive() const { return m_initialized; }
+
     // Coordinate constants
     static constexpr int kLogicalMax    = 4095;
     static constexpr int kCenterY       = 2048;

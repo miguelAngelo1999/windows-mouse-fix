@@ -93,6 +93,7 @@ private:
 
     // Last scroll direction for direction-change detection
     int m_lastDirection = 0;
+    long m_gestureY = 0;  // accumulated Y position for touch gesture
 
     // Idle timeout in milliseconds — after this, fingers are lifted
     static constexpr DWORD kIdleTimeoutMs = 80;

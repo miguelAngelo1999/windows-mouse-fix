@@ -198,76 +198,21 @@ void ScrollPipeline::processEvent(const ScrollEvent& ev) {
 
     if (!settings.enabled) return;
 
-    // Determine direction: +1 = down/right, -1 = up/left
-    int rawDelta = ev.delta; // positive = scroll up (away from user)
-
-    // Apply natural scroll inversion
-    // Windows default: positive delta = scroll up = content moves up
-    // Natural scroll: positive delta = content moves down (like macOS default)
+    int rawDelta = ev.delta;
     if (settings.naturalScroll) {
         rawDelta = -rawDelta;
     }
 
-    int direction = (rawDelta > 0) ? 1 : -1;
+    wmfLog("PROCESS: rawDelta=%d enabled=%d touchAvail=%d\n", rawDelta, settings.enabled, m_touchInjector.isAvailable());
 
-    // Get high-resolution timestamp
-    LARGE_INTEGER qpc, freq;
-    QueryPerformanceCounter(&qpc);
-    QueryPerformanceFrequency(&freq);
-    double tickTimestamp = (double)qpc.QuadPart / (double)freq.QuadPart;
-
-    // Run scroll analysis
-    ScrollAnalysisResult analysis = m_analyzer.update(tickTimestamp, direction);
-
-    // Direction change: cancel animation and reset
-    if (analysis.scrollDirectionDidChange && m_animator.isRunning()) {
-        m_animator.cancel();
-        m_subPixelator.reset();
-        m_contactMapper.reset();
-        cancelLift();
-    }
-
-    // Compute pixels for this tick
-    double pxForThisTick = 0.0;
-
-    if (settings.accelerationEnabled && analysis.timeBetweenTicks != DBL_MAX) {
-        double ticksPerSec = 1.0 / analysis.timeBetweenTicks;
-        pxForThisTick = m_accelCurve.evaluate(ticksPerSec);
-    } else {
-        // Fallback: fixed pixels per tick (matches one WHEEL_DELTA notch)
-        pxForThisTick = 120.0;
-    }
-
-    // Apply speed multiplier
-    pxForThisTick *= settings.speedMultiplier;
-
-    // Compute initial speed for the drag curve
-    // Speed = pixels / timeBetweenTicks (or a default for the first tick)
-    double initialSpeed = pxForThisTick;
-    if (analysis.timeBetweenTicks != DBL_MAX && analysis.timeBetweenTicks > 0.0) {
-        initialSpeed = pxForThisTick / analysis.timeBetweenTicks;
-    }
-    initialSpeed = std::max(initialSpeed, 2.0); // must be > stopSpeed
-
-    // Cancel any pending lift (new tick arrived)
-    cancelLift();
-
-    // Reset contact mapper on first tick of a new gesture
-    if (analysis.isFirstConsecutiveTick) {
-        m_contactMapper.reset();
-    }
-
-    // Start/restart the drag animator
-    m_animator.start(pxForThisTick, initialSpeed, direction,
-        [this](int dx, int dy, bool isLast) {
-            onAnimationFrame(dx, dy, isLast);
-        }
-    );
-
-    // Schedule finger lift after idle timeout
-    scheduleLift();
-
-    m_lastDirection = direction;
+    // SendInput WHEEL — reliable scroll in all apps
+    INPUT input = {};
+    input.type = INPUT_MOUSE;
+    input.mi.dwFlags = ev.isHorizontal ? MOUSEEVENTF_HWHEEL : MOUSEEVENTF_WHEEL;
+    input.mi.dwExtraInfo = MouseHook::kWmfMarker;
+    int scaled = (int)(rawDelta * settings.speedMultiplier);
+    input.mi.mouseData = (DWORD)(SHORT)scaled;
+    SendInput(1, &input, sizeof(INPUT));
 }
 
 // ---------------------------------------------------------------------------
@@ -345,13 +290,10 @@ void ScrollPipeline::liftThreadFunc() {
             DWORD now = GetTickCount();
             if (!m_liftPending.load()) break;  // cancelled
             if (now >= deadline) {
-                // Deadline reached and not cancelled — send lift
+                // Deadline reached and not cancelled — lift finger (triggers fling)
                 if (m_liftPending.exchange(false)) {
-                    m_animator.cancel();
-                    WMF_PTP_REPORT liftReport = m_contactMapper.map(0, 0, true);
-                    m_driver.submitReport(liftReport);
-                    m_contactMapper.reset();
-                    m_subPixelator.reset();
+                    m_touchInjector.injectUp();
+                    wmfLog("LIFT: finger up (fling trigger)\n");
                 }
                 break;
             }
