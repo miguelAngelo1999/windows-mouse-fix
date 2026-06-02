@@ -1,0 +1,23 @@
+LIBRARY ucrtbase 
+EXPORTS 
+  _initterm 
+  _initterm_e 
+  _cexit 
+  _crt_atexit 
+  _crt_at_quick_exit 
+  _seh_filter_dll 
+  _configure_narrow_argv 
+  _initialize_narrow_environment 
+  _initialize_onexit_table 
+  _register_onexit_function 
+  _execute_onexit_table 
+  terminate 
+  abort 
+  malloc 
+  free 
+  calloc 
+  memset 
+  memcpy 
+  memmove 
+  __stdio_common_vsprintf 
+  __stdio_common_vsprintf_s 

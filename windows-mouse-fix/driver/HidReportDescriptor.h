@@ -225,32 +225,6 @@ static const unsigned char kWmfHidReportDescriptor[] = {
     0x95, 0x01,              //   Report Count (1)
     0xB1, 0x02,              //   Feature (Data, Variable, Absolute)
 
-    // ======== Feature Report: Input Mode (Report ID 0x03) ========
-    // Windows writes 0x03 (Touchpad) to this to switch from mouse to PTP mode
-    0x85, 0x03,              //   Report ID (3)
-    0x09, 0x52,              //   Usage (Input Mode)
-    0x15, 0x00,              //   Logical Minimum (0)
-    0x25, 0x0A,              //   Logical Maximum (10)
-    0x75, 0x08,              //   Report Size (8)
-    0x95, 0x01,              //   Report Count (1)
-    0xB1, 0x02,              //   Feature (Data, Variable, Absolute)
-
-    // ======== Feature Report: Selective Reporting (Report ID 0x04) ========
-    0x85, 0x04,              //   Report ID (4)
-    0x05, 0x0D,              //   Usage Page (Digitizer)
-    0x09, 0x22,              //   Usage (Finger)
-    0xA1, 0x02,              //   Collection (Logical)
-    0x09, 0x57,              //     Usage (Surface Switch)
-    0x09, 0x58,              //     Usage (Button Switch)
-    0x15, 0x00,              //     Logical Minimum (0)
-    0x25, 0x01,              //     Logical Maximum (1)
-    0x75, 0x01,              //     Report Size (1)
-    0x95, 0x02,              //     Report Count (2)
-    0xB1, 0x02,              //     Feature (Data, Variable, Absolute)
-    0x95, 0x06,              //     Report Count (6)
-    0xB1, 0x03,              //     Feature (Constant)
-    0xC0,                    //   End Collection
-
     // ======== Feature Report: PTPHQA Certification Blob (Report ID 0x05) ========
     // 256 bytes of zeros — Windows checks for presence, not content
     0x06, 0x00, 0xFF,        //   Usage Page (Vendor Defined)
@@ -275,6 +249,46 @@ static const unsigned char kWmfHidReportDescriptor[] = {
     0x91, 0x02,              //   Output (Data, Variable, Absolute)
 
     0xC0,                    // End Collection (Touch Pad)
+
+    // ================================================================
+    // TOP-LEVEL COLLECTION 2: Configuration (Required for PTP recognition)
+    // Usage Page: Digitizer (0x0D), Usage: Configuration (0x0E)
+    // This tells Windows this is a Precision Touchpad and enables
+    // the input mode switching (mouse <-> touchpad).
+    // ================================================================
+    0x05, 0x0D,              // Usage Page (Digitizer)
+    0x09, 0x0E,              // Usage (Configuration)
+    0xA1, 0x01,              // Collection (Application)
+
+    // ======== Feature Report: Input Mode (Report ID 0x03) ========
+    // Windows writes 0x03 to switch to touchpad mode
+    0x85, 0x03,              //   Report ID (3)
+    0x09, 0x22,              //   Usage (Finger)
+    0xA1, 0x02,              //   Collection (Logical)
+    0x09, 0x52,              //     Usage (Input Mode)
+    0x15, 0x00,              //     Logical Minimum (0)
+    0x25, 0x0A,              //     Logical Maximum (10)
+    0x75, 0x08,              //     Report Size (8)
+    0x95, 0x01,              //     Report Count (1)
+    0xB1, 0x02,              //     Feature (Data, Variable, Absolute)
+    0xC0,                    //   End Collection (Logical)
+
+    // ======== Feature Report: Selective Reporting (Report ID 0x04) ========
+    0x85, 0x04,              //   Report ID (4)
+    0x09, 0x22,              //   Usage (Finger)
+    0xA1, 0x02,              //   Collection (Logical)
+    0x09, 0x57,              //     Usage (Surface Switch)
+    0x09, 0x58,              //     Usage (Button Switch)
+    0x15, 0x00,              //     Logical Minimum (0)
+    0x25, 0x01,              //     Logical Maximum (1)
+    0x75, 0x01,              //     Report Size (1)
+    0x95, 0x02,              //     Report Count (2)
+    0xB1, 0x02,              //     Feature (Data, Variable, Absolute)
+    0x95, 0x06,              //     Report Count (6)
+    0xB1, 0x03,              //     Feature (Constant)
+    0xC0,                    //   End Collection (Logical)
+
+    0xC0,                    // End Collection (Configuration)
 };
 
 #define WMF_HID_REPORT_DESCRIPTOR_SIZE  sizeof(kWmfHidReportDescriptor)
